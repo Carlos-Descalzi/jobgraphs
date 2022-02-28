@@ -66,7 +66,9 @@ func main() {
 		logger.Panic(err)
 	}
 
-	ctrl, err := controller.JobGraphsControllerNew(inputWorkerCount, outputWorkerCount, client, jobGraphIfce, logger)
+	jobHandler := controller.DefaultJobHandlerNew(client)
+
+	ctrl, err := controller.JobGraphsControllerNew(inputWorkerCount, outputWorkerCount, jobHandler, jobGraphIfce, logger)
 
 	if err != nil {
 		logger.Panic(err)

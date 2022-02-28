@@ -26,11 +26,52 @@ type LockInfo struct {
 	w            *sync.WaitGroup
 }
 
+type JobHandler interface {
+	WatchJobs(context.Context, metav1.ListOptions) (watch.Interface, error)
+	CreateJob(context.Context, string, *v1.Job) error
+	ListJobs(context.Context, string, metav1.ListOptions) (*v1.JobList, error)
+}
+
+type DefaultJobHandler struct {
+	kubeClient *clientset.Clientset
+}
+
+func DefaultJobHandlerNew(kubeClient *clientset.Clientset) *DefaultJobHandler {
+	return &DefaultJobHandler{kubeClient: kubeClient}
+}
+
+func (h *DefaultJobHandler) WatchJobs(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
+	return h.kubeClient.
+		BatchV1().
+		Jobs(metav1.NamespaceAll).
+		Watch(
+			ctx,
+			options,
+		)
+}
+
+func (h *DefaultJobHandler) CreateJob(ctx context.Context, namespace string, job *v1.Job) error {
+	_, err := h.kubeClient.BatchV1().
+		Jobs(namespace).
+		Create(ctx, job, metav1.CreateOptions{})
+	return err
+}
+
+func (h *DefaultJobHandler) ListJobs(ctx context.Context, namespace string, options metav1.ListOptions) (*v1.JobList, error) {
+	return h.kubeClient.
+		BatchV1().
+		Jobs(namespace).
+		List(
+			ctx,
+			options,
+		)
+}
+
 type JobGraphsController struct {
 	active            bool
 	inputWorkerCount  int
 	outputWorkerCount int
-	kubeClient        *clientset.Clientset
+	jobHandler        JobHandler
 	jobGraphIfce      ifces.JobGraphInterface
 	jobWatcher        watch.Interface
 	jobGraphWatcher   watch.Interface
@@ -45,12 +86,20 @@ type JobGraphsController struct {
 func JobGraphsControllerNew(
 	inputWorkerCount int,
 	outputWorkerCount int,
-	kubeClient *clientset.Clientset,
+	jobHandler JobHandler,
 	jobGraphIfce ifces.JobGraphInterface,
 	logger *zap.SugaredLogger) (*JobGraphsController, error) {
 
-	if kubeClient == nil {
-		return nil, fmt.Errorf("Kubernetes client is nil")
+	if inputWorkerCount <= 0 {
+		return nil, fmt.Errorf("inputWorkerCount must be > 0")
+	}
+
+	if outputWorkerCount <= 0 {
+		return nil, fmt.Errorf("outputWorkerCount must be > 0")
+	}
+
+	if jobHandler == nil {
+		return nil, fmt.Errorf("jobHandler client is nil")
 	}
 	if jobGraphIfce == nil {
 		return nil, fmt.Errorf("Job graph interface is nil")
@@ -60,7 +109,7 @@ func JobGraphsControllerNew(
 	}
 
 	controller := JobGraphsController{
-		kubeClient:        kubeClient,
+		jobHandler:        jobHandler,
 		inputWorkerCount:  inputWorkerCount,
 		outputWorkerCount: outputWorkerCount,
 		jobGraphIfce:      jobGraphIfce,
@@ -126,15 +175,12 @@ func (c *JobGraphsController) watchGraphs() {
 
 func (c *JobGraphsController) watchJobs() {
 
-	watcher, err := c.kubeClient.
-		BatchV1().
-		Jobs(metav1.NamespaceAll).
-		Watch(
-			c.ctx,
-			metav1.ListOptions{
-				LabelSelector: "graph,node",
-			},
-		)
+	watcher, err := c.jobHandler.WatchJobs(
+		c.ctx,
+		metav1.ListOptions{
+			LabelSelector: "graph,node",
+		},
+	)
 
 	if err == nil {
 		c.jobWatcher = watcher
@@ -209,9 +255,7 @@ func (c *JobGraphsController) dispatchJobs(workerNumber int) {
 			job := c.makeJob(next)
 
 			if job != nil {
-				_, err := c.kubeClient.BatchV1().
-					Jobs(next.graph.Namespace).
-					Create(c.ctx, job, metav1.CreateOptions{})
+				err := c.jobHandler.CreateJob(c.ctx, next.graph.Namespace, job)
 
 				if err != nil {
 					c.logger.Error(err)
@@ -272,7 +316,15 @@ func (c *JobGraphsController) processIncomingJobs(workerNumber int) {
 
 				nextNodes := c.nextNodes(graph, nodeName)
 
-				if c.canContinue(graph) || len(nextNodes) == 0 {
+				canContinue := c.canContinue(graph)
+
+				c.logger.Debugf("Graph %s/%s: next node count:%d, can continue: %v\n",
+					graph.Namespace,
+					graph.Name,
+					len(nextNodes),
+					canContinue,
+				)
+				if !canContinue || len(nextNodes) == 0 {
 					c.logger.Infof("Graph %s/%s finished", job.Namespace, graphName)
 					c.setGraphFinished(graph)
 				} else {
@@ -337,15 +389,13 @@ func (c *JobGraphsController) getRunningNodes(namespace string, graphName string
 
 	var result []string
 
-	jobs, err := c.kubeClient.
-		BatchV1().
-		Jobs(namespace).
-		List(
-			c.ctx,
-			metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("graph=%s", graphName),
-			},
-		)
+	jobs, err := c.jobHandler.ListJobs(
+		c.ctx,
+		namespace,
+		metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("graph=%s", graphName),
+		},
+	)
 
 	if err == nil {
 		for i := 0; i < len(jobs.Items); i++ {
@@ -368,7 +418,9 @@ func (c *JobGraphsController) isJobRunning(job *v1.Job) bool {
 		completions = *job.Spec.Completions
 	}
 
-	return completions > (job.Status.Succeeded + job.Status.Failed)
+	var total = job.Status.Succeeded + job.Status.Failed
+
+	return completions > total
 }
 
 func (c *JobGraphsController) setGraphStarted(graph *types.JobGraph) {
@@ -388,6 +440,7 @@ func (c *JobGraphsController) setGraphFinished(graph *types.JobGraph) {
 	var state types.JobGraphState
 
 	if len(graph.Status.FailedJobs) > 0 {
+		c.logger.Debugf("Job graph %s has failed jobs %d", graph.Name, graph.Status.FailedJobs)
 		state = types.Error
 	} else {
 		state = types.Success
