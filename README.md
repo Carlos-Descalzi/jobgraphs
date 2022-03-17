@@ -1,7 +1,7 @@
 # jobgraphs
 Kubernetes controller for running jobs specified in a graph definition
 
-Example:
+Example jobgraph:
 ```yaml
 apiVersion: ced.io/v1alpha1
 kind: JobGraph
@@ -31,4 +31,9 @@ spec:
               - image: ubuntu:20.04
                 command: ["echo","hello world"]
             restartPolicy: Never
+```
+
+## Install 
+```bash
+kubectl apply -f https://github.com/Carlos-Descalzi/jobgraphs/blob/main/deploy/deploy.yaml
 ```
