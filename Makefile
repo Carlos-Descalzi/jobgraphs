@@ -1,6 +1,8 @@
 TAG?=latest
 IMAGE_NAME=carlosdescalzi/jobgraphs:$(TAG)
 
+all: test image
+
 test:
 	go test ./... -coverprofile cover.out
 	if [ "$(DISPLAY)" != "" ]; then \
