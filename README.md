@@ -1,5 +1,8 @@
 # jobgraphs
-Kubernetes controller for running jobs specified in a graph definition
+Kubernetes controller for running jobs specified in a directed acyclic graph definition.
+Jobs represent nodes in the graph, when the resource is created, the controller will start running jobs according to the graph definition.
+The field 'jobFailureCondition' in job graph has two possible values, fail or continue, this tells the controller what to do once a job/node fails. 
+The field 'graph' declares the graph definition as an array of edges, defined by source and target job names.
 
 Example jobgraph:
 ```yaml
@@ -8,6 +11,7 @@ kind: JobGraph
 metadata:
   name: test-graph
 spec:
+  jobFailureCondition: fail
   graph:
     edges:
       - source: job1
