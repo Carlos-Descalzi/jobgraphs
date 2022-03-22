@@ -1,0 +1,67 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+    name: "jobgraphs.ced.io"
+spec:
+  group: "ced.io"
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+                type: object
+                properties:
+                  graph:
+                      type: object
+                      properties:
+                          edges: 
+                            type: array
+                            items:
+                                type: object
+                                properties:
+                                    source: 
+                                        type: string
+                                    target:
+                                        type: string
+                  jobFailureCondition:
+                      type: string
+                  jobTemplates:
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+            status:
+                type: object
+                properties:
+                    state:
+                        type: string
+                    reason:
+                        type: string
+                    succeededJobs:
+                        type: array
+                        items:
+                            type: string
+                    failedJobs:
+                        type: array
+                        items:
+                            type: string
+                    startTime:
+                        type: string
+                        format: date-time
+                    endTime:
+                        type: string
+                        format: date-time
+
+
+  names:
+    plural: jobgraphs
+    singular: jobgraph
+    kind: JobGraph
+    listKind: JobGraphList
+    shortNames:
+      - mtj
+  scope: Namespaced

@@ -1,0 +1,52 @@
+apiVersion: ced.io/v1alpha1
+kind: JobGraph
+metadata:
+  name: broken
+spec:
+  graph:
+    edges:
+      - source: start
+        target: task-1
+      - source: start
+        target: task-2
+      - source: task-1 
+        target: end
+      - source: task-2
+        target: end
+  jobTemplates:
+    - metadata:
+        name: start
+      spec:
+        template:
+          spec:
+            containers:
+              - image: 20.04
+                command: ["sleep","3"]
+            restartPolicy: Never
+    - metadata:
+        name: task-1
+      spec:
+        template:
+          spec:
+            containers:
+              - image: 20.04
+                command: ["sleep","3"]
+            restartPolicy: Never
+    - metadata:
+        name: task-2
+      spec:
+        template:
+          spec:
+            containers:
+              - image: 20.04
+                command: ["sleep","3"]
+            restartPolicy: Never
+    - metadata:
+        name: end
+      spec:
+        template:
+          spec:
+            containers:
+              - image: 20.04
+                command: ["sleep","3"]
+            restartPolicy: Never

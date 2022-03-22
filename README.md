@@ -39,5 +39,7 @@ spec:
 
 ## Install 
 ```bash
+kubectl apply -f https://github.com/Carlos-Descalzi/jobgraphs/blob/main/deploy/crd.yaml
+kubectl apply -f https://github.com/Carlos-Descalzi/jobgraphs/blob/main/deploy/rbac.yaml
 kubectl apply -f https://github.com/Carlos-Descalzi/jobgraphs/blob/main/deploy/deploy.yaml
 ```

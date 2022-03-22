@@ -149,27 +149,37 @@ func (c *JobGraphsController) Stop() {
 
 func (c *JobGraphsController) watchGraphs() {
 
-	watcher, err := c.jobGraphIfce.Watch(c.ctx, metav1.NamespaceAll, metav1.ListOptions{})
+	for c.active {
+		watcher, err := c.jobGraphIfce.Watch(c.ctx, metav1.NamespaceAll, metav1.ListOptions{})
 
-	if err == nil {
-		c.jobGraphWatcher = watcher
-		channel := c.jobGraphWatcher.ResultChan()
+		if err == nil {
+			c.jobGraphWatcher = watcher
+			channel := c.jobGraphWatcher.ResultChan()
 
-		for c.active {
-			evt, ok := <-channel
+			for c.active {
+				evt, ok := <-channel
 
-			if ok {
-				switch evt.Type {
-				case watch.Added:
-					c.startJobGraph(evt.Object.(*types.JobGraph))
-				case watch.Error:
-					c.logger.Errorf("Error with job graph: %s", evt.Object.(*metav1.Status))
+				if ok {
+					switch evt.Type {
+					case watch.Added:
+						c.startJobGraph(evt.Object.(*types.JobGraph))
+					case watch.Error:
+						c.logger.Errorf("Error with job graph: %s", evt.Object.(*metav1.Status))
+					}
+				} else {
+					if c.active {
+						// if there is a deserialization issue the channel will break,
+						// so exit from here and get a new watcher after a while.
+						time.Sleep(1 * time.Second)
+					} // otherwise it means the channel has been closed.
+					break
 				}
 			}
-		}
 
-	} else {
-		c.logger.Error("Unable to watch for job graphs")
+		} else {
+			c.logger.Error("Unable to watch for job graphs", err)
+			time.Sleep(1 * time.Second)
+		}
 	}
 }
 
@@ -251,7 +261,7 @@ func (c *JobGraphsController) dispatchJobs(workerNumber int) {
 		next, ok := <-c.dispatchQueue
 
 		if ok {
-			c.logger.Infof("Dispatching job %s/%s", next.graph.Namespace, next.jobName)
+			c.logger.Infof("Worker #%d: Dispatching job %s/%s", workerNumber, next.graph.Namespace, next.jobName)
 			job := c.makeJob(next)
 
 			if job != nil {
