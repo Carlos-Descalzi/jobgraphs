@@ -34,6 +34,10 @@ spec:
                       items:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                        x-kubernetes-group-version-kind: 
+                            group: batch
+                            kind: Job
+                            version: v1
             status:
                 type: object
                 properties:
