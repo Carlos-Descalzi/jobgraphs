@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: render-pvc
+spec:
+  storageClassName: 
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: ced.io/v1alpha1
+kind: JobGraph
+metadata:
+  name: blender-render-example
+spec:
+  graph:
+    edges:
+      - source: get-blend-file
+        target: render-job-1
+      - source: get-blend-file
+        target: render-job-2
+      - source: get-blend-file
+        target: render-job-3
+      - source: render-job-1
+        target: make-video
+      - source: render-job-2
+        target: make-video
+      - source: render-job-3
+        target: make-video
+  jobTemplates:
+    - metadata:
+        name: render-job-1
+      spec:
+        template:
+          spec:
+            containers:
+              - image: nytimes/blender
+                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","0..4"]
+                volumeMounts: 
+                  - name: renderstorage
+                    mountPath: /render
+            restartPolicy: Never
+            volumes:
+              - name: renderstorage
+                persistentVolumeClaim:
+                    claimName: render-pvc
+    - metadata:
+        name: render-job-2
+      spec:
+        template:
+          spec:
+            containers:
+              - image: nytimes/blender
+                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","5..9"]
+                volumeMounts: 
+                  - name: renderstorage
+                    mountPath: /render
+            restartPolicy: Never
+            volumes:
+              - name: renderstorage
+                persistentVolumeClaim:
+                    claimName: render-pvc
+    - metadata:
+        name: render-job-3
+      spec:
+        template:
+          spec:
+            containers:
+              - image: nytimes/blender
+                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","10..14"]
+                volumeMounts: 
+                  - name: renderstorage
+                    mountPath: /render
+            restartPolicy: Never
+            volumes:
+              - name: renderstorage
+                persistentVolumeClaim:
+                    claimName: render-pvc
+    - metadata:
+        name: get-blend-file
+      spec:
+        template:
+          spec:
+            containers:
+              - image: mwendler/wget
+                command: ["wget","--no-check-certificate", "https://github.com/Carlos-Descalzi/jobgraphs/blob/main/examples/render/example.blend?raw=true","-O","/render/example.blend"]
+                volumeMounts: 
+                  - name: renderstorage
+                    mountPath: /render
+            restartPolicy: Never
+            volumes:
+              - name: renderstorage
+                persistentVolumeClaim:
+                    claimName: render-pvc
+    - metadata:
+        name: make-video
+      spec:
+        template:
+          spec:
+            containers:
+              - image: jrottenberg/ffmpeg:3-scratch
+                command: ["ffmpeg","-framerate","24","-i","/render/image-%04d.png","/render/video.mp4"]
+                volumeMounts: 
+                  - name: renderstorage
+                    mountPath: /render
+            restartPolicy: Never
+            volumes:
+              - name: renderstorage
+                persistentVolumeClaim:
+                    claimName: render-pvc
