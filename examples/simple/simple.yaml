@@ -9,9 +9,33 @@ spec:
         target: task-1
       - source: start
         target: task-2
+      - source: start
+        target: task-3
+      - source: start
+        target: task-4
+      - source: start
+        target: task-5
+      - source: start
+        target: task-6
+      - source: start
+        target: task-7
+      - source: start
+        target: task-8
       - source: task-1 
         target: end
       - source: task-2
+        target: end
+      - source: task-3
+        target: end
+      - source: task-4
+        target: end
+      - source: task-5
+        target: end
+      - source: task-6
+        target: end
+      - source: task-7
+        target: end
+      - source: task-8
         target: end
   jobTemplates:
     - metadata:
@@ -21,7 +45,7 @@ spec:
           spec:
             containers:
               - image: ubuntu:20.04
-                command: ["sleep","3"]
+                command: ["sleep","1"]
             restartPolicy: Never
     - metadata:
         name: task-1
@@ -30,7 +54,7 @@ spec:
           spec:
             containers:
               - image: ubuntu:20.04
-                command: ["sleep","3"]
+                command: ["sleep","1"]
             restartPolicy: Never
     - metadata:
         name: task-2
@@ -39,7 +63,61 @@ spec:
           spec:
             containers:
               - image: ubuntu:20.04
-                command: ["sleep","3"]
+                command: ["sleep","1"]
+            restartPolicy: Never
+    - metadata:
+        name: task-3
+      spec:
+        template:
+          spec:
+            containers:
+              - image: ubuntu:20.04
+                command: ["sleep","1"]
+            restartPolicy: Never
+    - metadata:
+        name: task-4
+      spec:
+        template:
+          spec:
+            containers:
+              - image: ubuntu:20.04
+                command: ["sleep","1"]
+            restartPolicy: Never
+    - metadata:
+        name: task-5
+      spec:
+        template:
+          spec:
+            containers:
+              - image: ubuntu:20.04
+                command: ["sleep","1"]
+            restartPolicy: Never
+    - metadata:
+        name: task-6
+      spec:
+        template:
+          spec:
+            containers:
+              - image: ubuntu:20.04
+                command: ["sleep","1"]
+            restartPolicy: Never
+    - metadata:
+        name: task-7
+      spec:
+        template:
+          spec:
+            containers:
+              - image: ubuntu:20.04
+                command: ["sleep","1"]
+            restartPolicy: Never
+    - metadata:
+        name: task-8
+      spec:
+        template:
+          spec:
+            containers:
+              - image: ubuntu:20.04
+                command: ["sleep","1"]
             restartPolicy: Never
     - metadata:
         name: end
@@ -48,5 +126,5 @@ spec:
           spec:
             containers:
               - image: ubuntu:20.04
-                command: ["sleep","3"]
+                command: ["sleep","1"]
             restartPolicy: Never

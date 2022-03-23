@@ -16,4 +16,4 @@ image:
 	docker build -t $(IMAGE_NAME) $(PWD)
 
 run: 
-	go run cmd/* -kubeconfig=$(KUBECONFIG) 
+	go run cmd/* -kubeconfig=$(KUBECONFIG) --log-level=debug

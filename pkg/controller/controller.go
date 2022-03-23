@@ -80,7 +80,9 @@ type JobGraphsController struct {
 	inputQueue        chan *v1.Job
 	logger            *zap.SugaredLogger
 	graphsInProcess   map[string]LockInfo
-	mutex             sync.RWMutex
+	inProcessMutex    sync.RWMutex
+	//nodesInProcess    map[string]bool
+	//graphCheckMutex   sync.RWMutex
 }
 
 func JobGraphsControllerNew(
@@ -118,6 +120,7 @@ func JobGraphsControllerNew(
 		inputQueue:        make(chan *v1.Job),
 		logger:            logger,
 		graphsInProcess:   make(map[string]LockInfo),
+		//nodesInProcess:    make(map[string]bool),
 	}
 
 	return &controller, nil
@@ -261,16 +264,26 @@ func (c *JobGraphsController) dispatchJobs(workerNumber int) {
 		next, ok := <-c.dispatchQueue
 
 		if ok {
+			//if c.lockNode(next.graph.Namespace, next.graph.Name, next.jobName) {
 			c.logger.Infof("Worker #%d: Dispatching job %s/%s", workerNumber, next.graph.Namespace, next.jobName)
-			job := c.makeJob(next)
 
-			if job != nil {
-				err := c.jobHandler.CreateJob(c.ctx, next.graph.Namespace, job)
+			if !c.jobForNodeExists(next.graph, next.jobName) {
+				job := c.makeJob(next)
 
-				if err != nil {
-					c.logger.Error(err)
+				if job != nil {
+					err := c.jobHandler.CreateJob(c.ctx, next.graph.Namespace, job)
+
+					if err != nil {
+						c.logger.Error(err)
+					}
 				}
+			} else {
+				c.logger.Infof("Worker #%d: Job for node %s/%s/%s already created", workerNumber, next.graph.Namespace, next.graph.Name, next.jobName)
 			}
+			//c.unlockNode(next.graph.Namespace, next.graph.Name, next.jobName)
+			//} else {
+			//	c.logger.Info("Worker #%d: Node %s already taken by other worker, skipping", workerNumber, next.jobName)
+			//}
 		}
 	}
 }
@@ -286,6 +299,7 @@ func (c *JobGraphsController) makeJob(jobInfo JobInfo) *v1.Job {
 			job.Name = fmt.Sprintf("%s-%v", name, time.Now().Unix())
 			job.Namespace = jobInfo.graph.Namespace
 			job.Labels = make(map[string]string)
+			job.Labels["graph-id"] = string(jobInfo.graph.UID)
 			job.Labels["graph"] = jobInfo.graph.Name
 			job.Labels["node"] = jobInfo.jobName
 			for j := 0; j < len(job.Spec.Template.Spec.Containers); j++ {
@@ -314,39 +328,39 @@ func (c *JobGraphsController) processIncomingJobs(workerNumber int) {
 			c.logger.Infof("Processing outcomes for %s/%s:%s", job.Namespace, graphName, nodeName)
 
 			graph, err := c.fetchGraph(job.Namespace, graphName)
-			c.setInProcess(workerNumber, graph, true)
-
 			if err == nil {
-
-				if c.isJobSuccess(job) {
-					graph.Status.SucceededJobs = append(graph.Status.SucceededJobs, job.Name)
-				} else {
-					graph.Status.FailedJobs = append(graph.Status.FailedJobs, job.Name)
-				}
-
-				nextNodes := c.nextNodes(graph, nodeName)
-
-				canContinue := c.canContinue(graph)
-
-				c.logger.Debugf("Graph %s/%s: next node count:%d, can continue: %v\n",
-					graph.Namespace,
-					graph.Name,
-					len(nextNodes),
-					canContinue,
-				)
-				if !canContinue || len(nextNodes) == 0 {
-					c.logger.Infof("Graph %s/%s finished", job.Namespace, graphName)
-					c.setGraphFinished(graph)
-				} else {
-					for i := 0; i < len(nextNodes); i++ {
-						c.logger.Infof("Next node for graph %s/%s:%s", job.Namespace, graphName, nextNodes[i])
-						c.dispatchQueue <- JobInfo{graph: graph, jobName: nextNodes[i]}
+				c.lockGraph(graph, func() {
+					if c.isJobSuccess(job) {
+						graph.Status.SucceededJobs = append(graph.Status.SucceededJobs, job.Name)
+					} else {
+						graph.Status.FailedJobs = append(graph.Status.FailedJobs, job.Name)
 					}
-					c.updateGraph(graph)
-				}
 
+					nodeCount := graphs.NodeCount(&graph.Spec.Graph)
+					jobCount := len(graph.Status.SucceededJobs) + len(graph.Status.FailedJobs)
+
+					nextNodes := c.nextNodes(graph, nodeName)
+
+					canContinue := c.canContinue(graph)
+
+					c.logger.Debugf("Graph %s/%s: next node count:%d, can continue: %v\n",
+						graph.Namespace,
+						graph.Name,
+						len(nextNodes),
+						canContinue,
+					)
+					if !canContinue || jobCount == nodeCount {
+						c.logger.Infof("Graph %s/%s finished", job.Namespace, graphName)
+						c.setGraphFinished(graph)
+					} else {
+						for i := 0; i < len(nextNodes); i++ {
+							c.logger.Debugf("Next node for graph %s/%s:%s", job.Namespace, graphName, nextNodes[i])
+							c.dispatchQueue <- JobInfo{graph: graph, jobName: nextNodes[i]}
+						}
+						c.updateGraph(graph)
+					}
+				})
 			}
-			c.setInProcess(workerNumber, graph, false)
 			c.logger.Infof("Job check finished %s/%s:%s", job.Namespace, graphName, nodeName)
 		} else {
 			c.logger.Info("No more jobs to check")
@@ -362,9 +376,11 @@ func (c *JobGraphsController) canContinue(graph *types.JobGraph) bool {
 }
 
 func (c *JobGraphsController) nextNodes(graph *types.JobGraph, nodeName string) []string {
+	//c.graphCheckMutex.Lock()
+	//defer c.graphCheckMutex.Unlock()
 	nextNodes := graphs.Outgoing(&graph.Spec.Graph, nodeName)
 
-	runningJobs := c.getRunningNodes(graph.Namespace, graph.Name)
+	runningJobs := c.getRunningNodes(graph)
 
 	var result []string
 
@@ -395,15 +411,15 @@ func (c *JobGraphsController) intersect(array1 []string, array2 []string) bool {
 	return false
 }
 
-func (c *JobGraphsController) getRunningNodes(namespace string, graphName string) []string {
+func (c *JobGraphsController) getRunningNodes(graph *types.JobGraph) []string {
 
 	var result []string
 
 	jobs, err := c.jobHandler.ListJobs(
 		c.ctx,
-		namespace,
+		graph.Namespace,
 		metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("graph=%s", graphName),
+			LabelSelector: fmt.Sprintf("graph-id=%s", string(graph.UID)),
 		},
 	)
 
@@ -418,6 +434,20 @@ func (c *JobGraphsController) getRunningNodes(namespace string, graphName string
 	}
 
 	return result
+}
+
+func (c *JobGraphsController) jobForNodeExists(graph *types.JobGraph, nodeName string) bool {
+	jobs, err := c.jobHandler.ListJobs(
+		c.ctx,
+		graph.Namespace,
+		metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("graph-id=%s, node=%s", string(graph.UID), nodeName),
+		},
+	)
+	if err == nil {
+		return len(jobs.Items) != 0
+	}
+	return false
 }
 
 func (c *JobGraphsController) isJobRunning(job *v1.Job) bool {
@@ -471,32 +501,58 @@ func (c *JobGraphsController) updateGraph(graph *types.JobGraph) {
 	c.jobGraphIfce.Update(c.ctx, graph)
 }
 
+/*
+func (c *JobGraphsController) lockNode(namespace string, graph string, node string) bool {
+	c.graphCheckMutex.Lock()
+	defer c.graphCheckMutex.Unlock()
+
+	key := fmt.Sprintf("%s-%s-%s", namespace, graph, node)
+
+	_, ok := c.nodesInProcess[key]
+
+	if ok {
+		return false
+	}
+	c.nodesInProcess[key] = true
+	return true
+}
+
+func (c *JobGraphsController) unlockNode(namespace string, graph string, node string) {
+	c.graphCheckMutex.Lock()
+	defer c.graphCheckMutex.Unlock()
+
+	key := fmt.Sprintf("%s-%s-%s", namespace, graph, node)
+
+	_, ok := c.nodesInProcess[key]
+
+	if ok {
+		delete(c.nodesInProcess, key)
+	}
+}
+*/
 /**
   Avoid 2 workers do updates on the same graph at the same time
 **/
-func (c *JobGraphsController) setInProcess(workerNumber int, graph *types.JobGraph, inProcess bool) {
+func (c *JobGraphsController) lockGraph(graph *types.JobGraph, function func()) {
 
 	key := fmt.Sprintf("%s-%s", graph.Namespace, graph.Name)
 
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
+	c.inProcessMutex.Lock()
 	lock, ok := c.graphsInProcess[key]
-	if ok && lock.workerNumber != workerNumber {
-		c.logger.Infof("Input Worker#%d: Waiting other worker release graph %s", workerNumber, key)
+	c.inProcessMutex.Unlock()
+
+	if ok {
 		lock.w.Wait()
-		c.logger.Infof("Input Worker#%d: Graph released %s", workerNumber, key)
+	} else {
+		c.inProcessMutex.Lock()
+		c.graphsInProcess[key] = LockInfo{w: &sync.WaitGroup{}, workerNumber: 0}
+		c.graphsInProcess[key].w.Add(1)
+		c.inProcessMutex.Unlock()
 	}
 
-	if inProcess {
-		c.logger.Infof("Input Worker#%d: Requesting graph %s", workerNumber, key)
-		c.graphsInProcess[key] = LockInfo{w: &sync.WaitGroup{}, workerNumber: workerNumber}
-		c.graphsInProcess[key].w.Add(1)
-	} else {
-		c.logger.Infof("Input Worker#%d: Releasing graph %s", workerNumber, key)
-		if ok {
-			lock.w.Done()
-			delete(c.graphsInProcess, key)
-		}
-	}
+	function()
+
+	c.inProcessMutex.Lock()
+	delete(c.graphsInProcess, key)
+	c.inProcessMutex.Unlock()
 }

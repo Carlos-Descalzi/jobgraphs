@@ -26,8 +26,8 @@ func init() {
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kube config")
 	flag.StringVar(&masterURL, "masterURL", "", "Kubernetes API Server")
 	flag.StringVar(&logLevel, "log-level", "info", "Log level")
-	flag.IntVar(&inputWorkerCount, "input-worker-count", 1, "Number of input workers")
-	flag.IntVar(&outputWorkerCount, "output-worker-count", 1, "Number of output workers")
+	flag.IntVar(&inputWorkerCount, "input-worker-count", 3, "Number of input workers")
+	flag.IntVar(&outputWorkerCount, "output-worker-count", 3, "Number of output workers")
 }
 
 func main() {

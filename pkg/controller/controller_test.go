@@ -181,6 +181,7 @@ func TestDispatchJobs(t *testing.T) {
 	if err != nil {
 		t.Error()
 	}
+	jobHandler.jobList = &v1.JobList{Items: []v1.Job{}}
 
 	controller.active = true
 

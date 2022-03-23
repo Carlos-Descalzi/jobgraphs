@@ -6,6 +6,17 @@ import (
 	types "ced.io/jobgraphs/pkg/apis/v1alpha1"
 )
 
+func NodeCount(g *types.GraphSpec) int {
+	nodes := make(map[string]bool)
+
+	for i := 0; i < len(g.Edges); i++ {
+		nodes[g.Edges[i].Source] = true
+		nodes[g.Edges[i].Target] = true
+	}
+
+	return len(nodes)
+}
+
 func Outgoing(g *types.GraphSpec, node string) []string {
 
 	var outgoing []string

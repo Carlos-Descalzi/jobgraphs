@@ -21,6 +21,16 @@ func compare(arr1 []string, arr2 []string) bool {
 	return true
 }
 
+func TestNodeCount(t *testing.T) {
+	graphSpec := types.GraphSpec{
+		Edges: []types.Edge{{Source: "n1", Target: "n2"}, {Source: "n1", Target: "n3"}, {Source: "n2", Target: "n4"}},
+	}
+
+	if NodeCount(&graphSpec) != 4 {
+		t.Error("")
+	}
+}
+
 func TestOutgoing(t *testing.T) {
 
 	graphSpec := types.GraphSpec{
