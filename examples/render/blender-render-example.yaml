@@ -37,7 +37,7 @@ spec:
           spec:
             containers:
               - image: nytimes/blender
-                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","0..4"]
+                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","0..59"]
                 volumeMounts: 
                   - name: renderstorage
                     mountPath: /render
@@ -53,7 +53,7 @@ spec:
           spec:
             containers:
               - image: nytimes/blender
-                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","5..9"]
+                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","60..119"]
                 volumeMounts: 
                   - name: renderstorage
                     mountPath: /render
@@ -69,7 +69,7 @@ spec:
           spec:
             containers:
               - image: nytimes/blender
-                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","10..14"]
+                command: ["blender","-b","/render/example.blend","-o","/render/image-####","-f","120..179"]
                 volumeMounts: 
                   - name: renderstorage
                     mountPath: /render
